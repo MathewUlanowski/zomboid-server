@@ -16,8 +16,8 @@ FROM cm2network/steamcmd:root
 
 LABEL org.opencontainers.image.title="Project Zomboid Dedicated Server" \
       org.opencontainers.image.description="Self-updating Project Zomboid dedicated server (SteamCMD app 380870) with Steam Workshop mod support" \
-      org.opencontainers.image.source="https://pzwiki.net/wiki/Dedicated_server" \
-      org.opencontainers.image.licenses="Proprietary-ProjectZomboid"
+      org.opencontainers.image.source="https://github.com/MathewUlanowski/zomboid-server" \
+      org.opencontainers.image.licenses="MIT"
 
 ENV PZ_DIR=/home/steam/pz/server \
     PZ_DATA=/home/steam/pz/data \
