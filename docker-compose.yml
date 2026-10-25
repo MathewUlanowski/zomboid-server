@@ -1,0 +1,38 @@
+# Local run on Docker Desktop.
+#   docker compose up -d --build
+#   docker compose logs -f         # first boot downloads the server (several GB)
+#   docker compose down            # server saves on SIGTERM (120s grace)
+services:
+  zomboid:
+    build: .
+    image: zomboid-server:latest
+    container_name: zomboid
+    restart: unless-stopped
+    # Give the server time to save the world on shutdown.
+    stop_grace_period: 120s
+    environment:
+      PZ_SERVER_NAME: "servertest"
+      PZ_PUBLIC_NAME: "My Zomboid Server"
+      PZ_MAX_PLAYERS: "16"
+      PZ_ADMIN_PASSWORD: "${PZ_ADMIN_PASSWORD:-changeme}"
+      # Optional password players need to join:
+      PZ_SERVER_PASSWORD: ""
+      # JVM heap. Keep it below the container/host memory you can spare.
+      PZ_MEMORY: "8g"
+      # "latest" checks Steam on every boot. A label such as "42.21.0" holds
+      # the installed build until you change the label.
+      PZ_VERSION: "latest"
+      # Steam Workshop item IDs (the number at the end of the Workshop URL),
+      # separated by ; or , — e.g. "2392709985;2169435993"
+      PZ_WORKSHOP_IDS: ""
+      # Leave empty to enable every mod inside those items automatically.
+      # Set it only to pick specific mods out of a multi-mod item.
+      PZ_MOD_IDS: ""
+    ports:
+      - "16261:16261/udp"
+      - "16262:16262/udp"
+    volumes:
+      - zomboid-data:/home/steam/pz
+
+volumes:
+  zomboid-data:

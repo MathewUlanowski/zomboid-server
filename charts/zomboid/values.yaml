@@ -1,0 +1,162 @@
+# Default values for the Project Zomboid dedicated server chart.
+
+image:
+  repository: ghcr.io/mathewulanowski/zomboid-server
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# ---------------------------------------------------------------------------
+# Server configuration -> passed to the container as environment variables.
+# ---------------------------------------------------------------------------
+server:
+  # Config-set / save name (servertest.ini, Saves/Multiplayer/servertest).
+  # Changing it later starts a brand new world.
+  name: servertest
+  # Name shown in the in-game server browser; empty -> keep the .ini value
+  publicName: ""
+  maxPlayers: 16
+  # JVM heap (-Xmx). resources.limits.memory must stay comfortably ABOVE this
+  # (heap + ~2Gi of native/JVM overhead) or the pod gets OOM-killed.
+  memory: 8g
+  # Game version. The install is cached on the volume either way; this decides
+  # when it may change:
+  #   latest    -> check Steam on every pod start and track the current build
+  #   "42.21.0" -> hold the installed build. SteamCMD only runs when you CHANGE
+  #                this value (it then installs the newest build of the branch
+  #                and the boot log warns if that isn't the version you named).
+  # Steam cannot serve an older build of a branch, so this pins by not updating.
+  version: latest
+  # Also re-validate every game file on start (slow; use to repair an install)
+  validateOnStart: false
+  # Optional Steam beta branch (e.g. "unstable"); leave empty for the default branch
+  betaBranch: ""
+  # Name of the in-game admin account (its password comes from auth.* below)
+  adminUsername: admin
+  # Freeform extra server flags
+  extraArgs: ""
+  # Key/value pairs applied to the server .ini on every start, rendered as
+  # Key=Value lines. Anything not listed here keeps its current .ini value.
+  # e.g. { PVP: false, PauseEmpty: true, SaveWorldEveryMinutes: 15 }
+  iniOverrides: {}
+
+# ---------------------------------------------------------------------------
+# Sandbox (gameplay) options -> <server.name>_SandboxVars.lua. Only the options
+# listed here are changed, on every start; everything else keeps its value.
+# Names and the meaning of each number are documented in that file on the
+# volume (data/Server/). Options inside a group are nested one level:
+#   sandbox:
+#     CharacterFreePoints: 8
+#     ZombieLore:
+#       Transmission: 2        # 1 Blood+Saliva, 2 Saliva Only, 3 Everyone, 4 None
+# ---------------------------------------------------------------------------
+sandbox: {}
+
+# ---------------------------------------------------------------------------
+# Passwords -> stored in a Secret and injected via secretKeyRef (never as
+# plain env values in the StatefulSet).
+# ---------------------------------------------------------------------------
+auth:
+  # Use a Secret you manage yourself; the chart then creates none.
+  # Expected keys: admin-password (required), server-password, rcon-password
+  existingSecret: ""
+  # Empty -> a random one is generated on first install and KEPT on upgrades.
+  # Required by the server on first boot, when the admin account is created.
+  adminPassword: ""
+  # Password players need to join; empty -> open server
+  serverPassword: ""
+  # Only useful together with service.rcon.enabled
+  rconPassword: ""
+
+# ---------------------------------------------------------------------------
+# Steam Workshop mods. The server downloads these itself on startup and writes
+# them to the data volume. A workshop ID is the number at the end of the Steam
+# Workshop URL (.../sharedfiles/filedetails/?id=2392709985). Provide IDs as a
+# YAML list; quoted strings and bare numbers both work.
+# ---------------------------------------------------------------------------
+mods:
+  manage: true                   # false -> hand-edit Mods=/WorkshopItems= in the .ini on the PVC
+  workshopIds: []                # e.g. ["2392709985", "2169435993"]
+  # Mod IDs to enable (the "Mod ID:" line on the Workshop page). Empty -> every
+  # mod inside each workshop item is enabled automatically.
+  modIds: []
+  # Mod IDs to leave OUT of that automatic list — for optional sub-mods that
+  # ship inside a multi-mod workshop item (the boot log lists what each item
+  # contains). e.g. ["1299328280/ToadTraitsDisableSpec"]
+  excludeModIds: []
+  # Also install each item's Steam "Required items" (and theirs), ahead of the
+  # item that needs them. false -> only the IDs listed above are used.
+  resolveDependencies: true
+  # Map folder names, in load order. Empty -> map mods are auto-detected; set
+  # this only when you need to control which maps load, or their order.
+  maps: []
+
+# ---------------------------------------------------------------------------
+# Scheduled world backup (a CronJob using the same image). It asks the running
+# server to save, archives the data folder (world, player db, .ini, sandbox
+# vars — not the game install) into hostPath on the node, and keeps the newest
+# `keep` archives. Needs persistence.enabled. The archives live on the same
+# machine as the world: copy them elsewhere if losing the node matters.
+# ---------------------------------------------------------------------------
+backup:
+  enabled: false
+  # Cron syntax, in the cluster's time zone (UTC on most clusters)
+  schedule: "0 10 * * *"
+  keep: 7
+  # Folder on the node that receives <server.name>-<date>.tgz
+  hostPath: /var/backups/zomboid
+
+# ---------------------------------------------------------------------------
+# Persistence — ONE volume holding both the game install (several GB) and the
+# saves/config. Losing it means re-downloading the game AND losing the world.
+# ---------------------------------------------------------------------------
+persistence:
+  enabled: true
+  # Empty string -> cluster default StorageClass
+  storageClass: ""
+  accessMode: ReadWriteOnce
+  size: 30Gi
+  # Reuse an existing PVC instead of the StatefulSet volumeClaimTemplate
+  existingClaim: ""
+
+# ---------------------------------------------------------------------------
+# Networking. Project Zomboid needs two UDP ports; RCON (TCP) is optional.
+# Enabling RCON makes this a mixed-protocol Service, which requires
+# k8s >= 1.26.
+# ---------------------------------------------------------------------------
+service:
+  type: LoadBalancer          # LoadBalancer | NodePort | ClusterIP
+  # loadBalancerIP: "10.0.0.50"
+  annotations: {}
+  gamePort: 16261             # UDP — the port players type in
+  udpPort: 16262              # UDP — direct connection
+  rcon:
+    enabled: false            # true -> expose RCON; set auth.rconPassword too
+    port: 27015               # TCP
+
+# ---------------------------------------------------------------------------
+# Scheduling — the Project Zomboid server is amd64-only. Pin to amd64 nodes so
+# the pod never lands on an ARM node.
+# ---------------------------------------------------------------------------
+nodeSelector:
+  kubernetes.io/arch: amd64
+tolerations: []
+affinity: {}
+
+# limits.memory must exceed server.memory (the JVM heap) — see above.
+resources:
+  requests:
+    cpu: "2"
+    memory: 6Gi
+  limits:
+    memory: 10Gi
+
+# Seconds to allow the server to save the world and quit on shutdown.
+terminationGracePeriodSeconds: 120
+
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}

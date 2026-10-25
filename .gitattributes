@@ -1,0 +1,5 @@
+# Everything is checked in with LF; scripts and the Dockerfile run inside a
+# Linux container and must never be checked out with CRLF.
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf

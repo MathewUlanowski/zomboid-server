@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "zomboid.fullname" . }}
+  labels:
+    {{- include "zomboid.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- if and (eq .Values.service.type "LoadBalancer") .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ .Values.service.loadBalancerIP }}
+  {{- end }}
+  selector:
+    {{- include "zomboid.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: game
+      port: {{ .Values.service.gamePort }}
+      targetPort: game
+      protocol: UDP
+    - name: direct
+      port: {{ .Values.service.udpPort }}
+      targetPort: direct
+      protocol: UDP
+    {{- if .Values.service.rcon.enabled }}
+    - name: rcon
+      port: {{ .Values.service.rcon.port }}
+      targetPort: rcon
+      protocol: TCP
+    {{- end }}

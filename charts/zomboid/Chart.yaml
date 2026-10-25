@@ -1,0 +1,19 @@
+apiVersion: v2
+name: zomboid
+description: Project Zomboid dedicated game server with Steam Workshop mod support
+type: application
+version: 0.1.0
+# The image installs/updates the game at pod start, so the chart is not tied
+# to a specific Project Zomboid build.
+appVersion: "latest"
+keywords:
+  - project-zomboid
+  - zomboid
+  - game-server
+  - dedicated-server
+home: https://github.com/MathewUlanowski/zomboid-server
+sources:
+  - https://github.com/MathewUlanowski/zomboid-server
+maintainers:
+  - name: MathewUlanowski
+    url: https://github.com/MathewUlanowski

@@ -1,0 +1,73 @@
+{{- if and .Values.backup.enabled .Values.persistence.enabled }}
+# Nightly world backup: triggers an in-game save, archives the data folder to
+# backup.hostPath on the node, and rotates old archives. Run one on demand with
+#   kubectl create job --from=cronjob/{{ include "zomboid.fullname" . }}-backup manual-backup
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "zomboid.fullname" . }}-backup
+  labels:
+    {{- include "zomboid.labels" . | nindent 4 }}
+spec:
+  schedule: {{ .Values.backup.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: {{ include "zomboid.name" . }}-backup
+            app.kubernetes.io/instance: {{ .Release.Name }}
+        spec:
+          restartPolicy: Never
+          {{- with .Values.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: backup
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["/usr/local/bin/pz-backup.sh"]
+              env:
+                - name: PZ_SERVER_NAME
+                  value: {{ .Values.server.name | quote }}
+                - name: PZ_BACKUP_DIR
+                  value: /backups
+                - name: PZ_BACKUP_KEEP
+                  value: {{ .Values.backup.keep | quote }}
+              volumeMounts:
+                # Read-only: the job only reads the world (writing to the
+                # console FIFO is still allowed on a read-only mount).
+                - name: data
+                  mountPath: /home/steam/pz
+                  readOnly: true
+                - name: backups
+                  mountPath: /backups
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+          volumes:
+            # Same claim as the server. It is ReadWriteOnce, so the job has to
+            # run on the server's node — the volume's own node affinity (and
+            # the nodeSelector below) take care of that.
+            - name: data
+              persistentVolumeClaim:
+                claimName: {{ .Values.persistence.existingClaim | default (printf "data-%s-0" (include "zomboid.fullname" .)) }}
+            - name: backups
+              hostPath:
+                path: {{ .Values.backup.hostPath | quote }}
+                type: DirectoryOrCreate
+          {{- with .Values.nodeSelector }}
+          nodeSelector:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+{{- end }}

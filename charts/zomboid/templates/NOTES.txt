@@ -1,0 +1,41 @@
+Project Zomboid dedicated server "{{ default .Values.server.name .Values.server.publicName }}" deployed.
+
+Save: {{ .Values.server.name }}   Max players: {{ .Values.server.maxPlayers }}   Heap: {{ .Values.server.memory }}
+
+1. Watch it come up (first boot downloads several GB of game files — be patient):
+   kubectl -n {{ .Release.Namespace }} logs -f statefulset/{{ include "zomboid.fullname" . }}
+
+2. Read the admin password (user "{{ .Values.server.adminUsername }}"):
+   kubectl -n {{ .Release.Namespace }} get secret {{ include "zomboid.secretName" . }} \
+     -o jsonpath='{.data.admin-password}' | base64 -d
+{{- if .Values.auth.existingSecret }}
+   (stored in your existing Secret "{{ .Values.auth.existingSecret }}")
+{{- else if not .Values.auth.adminPassword }}
+   (generated on first install and kept across upgrades)
+{{- end }}
+
+3. Find the address players connect to:
+{{- if eq .Values.service.type "LoadBalancer" }}
+   kubectl -n {{ .Release.Namespace }} get svc {{ include "zomboid.fullname" . }} \
+     -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+   Connect in-game via Join -> IP: <that IP>, Port: {{ .Values.service.gamePort }}
+   (UDP {{ .Values.service.gamePort }} and {{ .Values.service.udpPort }} must both be reachable)
+{{- else if eq .Values.service.type "NodePort" }}
+   kubectl -n {{ .Release.Namespace }} get svc {{ include "zomboid.fullname" . }}
+   Connect to <nodeIP>, Port: <nodePort for {{ .Values.service.gamePort }}>
+{{- else }}
+   Service type is ClusterIP — reachable only inside the cluster.
+{{- end }}
+
+{{- if .Values.service.rcon.enabled }}
+
+RCON is exposed on TCP {{ .Values.service.rcon.port }} (password: key "rcon-password" in the same Secret).
+{{- end }}
+
+{{- if .Values.mods.workshopIds }}
+
+Workshop items requested ({{ len .Values.mods.workshopIds }}): {{ include "zomboid.workshopIds" . | replace ";" ", " }}
+The server downloads these on startup; watch the logs for progress.
+{{- end }}
+
+Note: this pod is pinned to amd64 nodes ({{ .Values.nodeSelector | toYaml | nindent 3 }}) because the Project Zomboid server is x86-64 only.
